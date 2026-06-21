@@ -40,6 +40,11 @@ module Scout
       def events(search_id)
         @client.request(:get, "/v1/searches/#{search_id}/events")
       end
+
+      # Stream a deep-search run's progress events live (SSE).
+      def stream_events(search_id, &block)
+        stream_sse("/v1/searches/#{search_id}/events", &block)
+      end
     end
   end
 end

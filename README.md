@@ -122,6 +122,24 @@ client.search.iterate.each { |run| puts run }
 client.monitors.iterate.each { |monitor| puts monitor }
 ```
 
+## Streaming
+
+Stream chat completions and live run progress (search, jobs, find-all, monitors). Each returns an `Enumerator`, or takes a block:
+
+```ruby
+# Token-by-token chat
+client.chat.completions.stream(messages: [{ role: "user", content: "Summarize EU AI regulation." }]) do |chunk|
+  print chunk["choices"][0]["delta"]["content"].to_s
+end
+
+# Live progress events from a deep-search run
+client.search.stream_events(search_id) do |event|
+  puts event["type"]
+end
+```
+
+`stream_events` is also available on `jobs`, `lists.runs`, and `monitors`.
+
 ## Versioning
 
 This SDK follows [SemVer](https://semver.org/) and sends the targeted Scout API version on every request; see [`CHANGELOG.md`](./CHANGELOG.md).

@@ -10,6 +10,21 @@ module Scout
       def create(messages:, **params)
         @client.request(:post, "/v1/chat/completions", body: compact({ messages: messages }.merge(params)))
       end
+
+      # Stream a chat completion as OpenAI-style chunk hashes. Read token text
+      # from chunk["choices"][0]["delta"]["content"]. Returns an Enumerator
+      # when no block is given.
+      def stream(messages:, **params, &block)
+        body = compact({ messages: messages, stream: true }.merge(params))
+        enum = Enumerator.new do |y|
+          @client.stream(:post, "/v1/chat/completions", body: body) do |evt|
+            break if evt[:data] == "[DONE]"
+
+            y << JSON.parse(evt[:data])
+          end
+        end
+        block ? enum.each(&block) : enum
+      end
     end
 
     class Chat < Base

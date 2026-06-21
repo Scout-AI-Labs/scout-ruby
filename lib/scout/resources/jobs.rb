@@ -31,6 +31,11 @@ module Scout
         @client.request(:get, "/v1/jobs/#{task_id}/events")
       end
 
+      # Stream a job's progress events live (SSE).
+      def stream_events(task_id, &block)
+        stream_sse("/v1/jobs/#{task_id}/events", &block)
+      end
+
       def start_run(**body)
         @client.request(:post, "/v1/jobs/runs", body: compact(body))
       end

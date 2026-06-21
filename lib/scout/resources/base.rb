@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "json"
+
 module Scout
   module Resources
     # Base class for resource groups. Holds the client and shared helpers.
@@ -11,6 +13,19 @@ module Scout
       end
 
       private
+
+      # Stream a GET SSE endpoint, yielding each event's parsed JSON.
+      # Returns an Enumerator when no block is given.
+      def stream_sse(path, &block)
+        enum = Enumerator.new do |y|
+          @client.stream(:get, path) do |evt|
+            break if evt[:data] == "[DONE]"
+
+            y << JSON.parse(evt[:data])
+          end
+        end
+        block ? enum.each(&block) : enum
+      end
 
       # Drop nil values so we never send explicit nulls.
       def compact(hash)

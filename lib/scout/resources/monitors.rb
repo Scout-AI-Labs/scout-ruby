@@ -48,6 +48,11 @@ module Scout
       def events(monitor_id)
         @client.request(:get, "/v1/monitors/#{monitor_id}/events")
       end
+
+      # Stream a monitor's events live (SSE).
+      def stream_events(monitor_id, &block)
+        stream_sse("/v1/monitors/#{monitor_id}/events", &block)
+      end
     end
   end
 end

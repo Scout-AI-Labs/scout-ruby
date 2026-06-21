@@ -78,7 +78,77 @@ module Scout
       end
     end
 
+    # Open a streaming (SSE) request, yielding { event:, data: } records.
+    # Returns an Enumerator when no block is given.
+    def stream(method, path, body: nil, &block)
+      return enum_for(:stream, method, path, body: body) unless block
+
+      uri = URI.join(@base_url + "/", path.sub(%r{\A/}, ""))
+      body_json = body.nil? || method == :get ? nil : JSON.generate(body)
+
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = uri.scheme == "https"
+      http.read_timeout = @timeout
+      http.open_timeout = @timeout
+
+      req = build_request(method, uri, body_json, method != :get)
+      req["Accept"] = "text/event-stream"
+
+      begin
+        http.request(req) do |response|
+          status = response.code.to_i
+          unless status.between?(200, 299)
+            headers = response.to_hash.transform_values { |v| v.is_a?(Array) ? v.first : v }
+            raise Scout.api_error_from_status(
+              status, error_message(safe_json(response.body), status),
+              request_id: response["x-request-id"], body: safe_json(response.body), headers: headers
+            )
+          end
+          buffer = +""
+          response.read_body do |chunk|
+            buffer << chunk.gsub("\r\n", "\n")
+            while (idx = buffer.index("\n\n"))
+              raw = buffer.slice!(0, idx + 2)
+              evt = parse_sse_block(raw)
+              yield evt if evt
+            end
+          end
+          evt = parse_sse_block(buffer)
+          yield evt if evt
+        end
+      rescue Net::OpenTimeout, Net::ReadTimeout => e
+        raise TimeoutError, "Request timed out after #{@timeout}s: #{e.message}"
+      rescue SocketError, SystemCallError, IOError => e
+        raise ConnectionError, e.message
+      end
+    end
+
     private
+
+    def parse_sse_block(raw)
+      event = nil
+      data = []
+      raw.split("\n").each do |line|
+        next if line.empty? || line.start_with?(":")
+
+        field, _, value = line.partition(":")
+        value = value[1..] if value.start_with?(" ")
+        if field == "event"
+          event = value
+        elsif field == "data"
+          data << value
+        end
+      end
+      data.empty? ? nil : { event: event, data: data.join("\n") }
+    end
+
+    def safe_json(text)
+      return nil if text.nil? || text.empty?
+
+      JSON.parse(text)
+    rescue JSON::ParserError
+      text
+    end
 
     def attempt_request(method, uri, body_json, is_write)
       http = Net::HTTP.new(uri.host, uri.port)

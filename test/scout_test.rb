@@ -58,6 +58,17 @@ class ScoutTest < Minitest::Test
     assert_equal [{ "id" => 1 }], items
   end
 
+  def test_chat_stream_yields_deltas
+    chunks = @client.chat.completions.stream(messages: [{ role: "user", content: "hi" }])
+                    .map { |c| c["choices"][0]["delta"]["content"] }
+    assert_equal %w[Hel lo], chunks
+  end
+
+  def test_stream_events_yields_parsed_events
+    types = @client.search.stream_events("abc").map { |e| e["type"] }
+    assert_equal %w[run.progress run.completed], types
+  end
+
   private
 
   def serve
@@ -80,6 +91,10 @@ class ScoutTest < Minitest::Test
     body = headers["content-length"] ? conn.read(headers["content-length"].to_i) : ""
     parsed = body.empty? ? {} : JSON.parse(body)
 
+    if path == "/v1/chat/completions" || path.end_with?("/events")
+      return write_sse(conn, path)
+    end
+
     status, obj = route(method, path, headers, parsed)
     payload = JSON.generate(obj)
     conn.write("HTTP/1.1 #{status} X\r\n")
@@ -87,6 +102,24 @@ class ScoutTest < Minitest::Test
     conn.write("X-Request-Id: req_abc123\r\n")
     conn.write("Content-Length: #{payload.bytesize}\r\n\r\n")
     conn.write(payload)
+    conn.close
+  end
+
+  def write_sse(conn, path)
+    frames =
+      if path.end_with?("/events")
+        [": keepalive\r\n\r\n",
+         "event: run.progress\r\ndata: {\"type\":\"run.progress\"}\r\n\r\n",
+         "event: run.completed\r\ndata: {\"type\":\"run.completed\"}\r\n\r\n"]
+      else
+        ["data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\r\n\r\n",
+         "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\r\n\r\n",
+         "data: [DONE]\r\n\r\n"]
+      end
+    body = frames.join
+    conn.write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n" \
+               "X-Request-Id: req_abc123\r\nContent-Length: #{body.bytesize}\r\n\r\n")
+    conn.write(body)
     conn.close
   end
 

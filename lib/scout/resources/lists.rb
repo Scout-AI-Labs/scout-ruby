@@ -35,6 +35,11 @@ module Scout
       def events(findall_id)
         @client.request(:get, "/v1/lists/runs/#{findall_id}/events")
       end
+
+      # Stream a find-all run's progress events live (SSE).
+      def stream_events(findall_id, &block)
+        stream_sse("/v1/lists/runs/#{findall_id}/events", &block)
+      end
     end
 
     # Find-all ("lists"): build a list of entities matching a query, then enrich
